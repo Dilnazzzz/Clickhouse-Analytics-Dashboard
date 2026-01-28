@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body {
+  height: 100%;
+}
+
+body {
+  @apply bg-white text-gray-900;
+}
+
+.container {
+  @apply max-w-6xl mx-auto px-4;
+}
+

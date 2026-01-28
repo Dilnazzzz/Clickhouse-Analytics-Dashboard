@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum IngestStatus {
+  ACCEPTED
+  DUPLICATE
+  REJECTED
+}
+
+model EventDefinition {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+}
+
+model IngestRequest {
+  id              String       @id @default(cuid())
+  idempotencyKey  String?      @unique
+  receivedAt      DateTime     @default(now())
+  status          IngestStatus
+  reason          String?
+  eventName       String
+  userId          String?
+  anonymousId     String?
+  timestamp       DateTime
+}
+
+model Funnel {
+  id        String   @id @default(cuid())
+  name      String
+  stepsJson Json
+  createdAt DateTime @default(now())
+}
+
+model Report {
+  id          String   @id @default(cuid())
+  periodStart DateTime
+  periodEnd   DateTime
+  payloadJson Json
+  createdAt   DateTime @default(now())
+}
+
