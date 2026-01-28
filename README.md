@@ -1,6 +1,6 @@
-# PulseBoard (Mixpanel-lite)
+# Clickhouse Analytics Dashboard (Mixpanel-lite)
 
-PulseBoard is a minimal, production-ish internal analytics tool:
+Clickhouse Analytics Dashboard is a minimal, production-ish internal analytics tool:
 
 - Ingest product events with strict Zod validation and idempotency
 - Store canonical metadata/config in Postgres (Prisma)
@@ -102,4 +102,3 @@ Run: `npm test`
 - Funnels can be created and show conversion stats
 - Seed/demo generator creates enough activity to make charts meaningful
 - Tests pass (`npm test`)
-
