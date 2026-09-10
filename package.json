@@ -10,7 +10,9 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev --name init",
     "db:seed": "tsx prisma/seed.ts",
-    "ch:setup": "tsx scripts/clickhouse/setup.ts"
+    "ch:setup": "tsx scripts/clickhouse/setup.ts",
+    "demo:seed": "tsx scripts/generate-demo-events.ts",
+    "setup": "prisma generate && prisma migrate deploy && tsx scripts/clickhouse/setup.ts && prisma db seed"
   },
   "engines": {
     "node": ">=18.17.0"

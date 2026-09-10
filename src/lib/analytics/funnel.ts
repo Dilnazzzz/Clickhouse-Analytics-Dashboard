@@ -25,6 +25,6 @@ export function computeFunnelConversion(steps: string[], events: SimpleEvent[]) 
       }
     }
   }
-  return counts.map((c, i) => ({ step: steps[i], count: c, conversion: i === 0 ? 1 : c / Math.max(1, counts[0]) }))
+  return counts.map((c, i) => ({ step: steps[i], count: c, conversion: counts[0] > 0 ? c / counts[0] : 0 }))
 }
 

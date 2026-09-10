@@ -1,17 +1,42 @@
-# Clickhouse Analytics Dashboard (Mixpanel-lite)
+# PulseBoard — ClickHouse Analytics Dashboard (Mixpanel-lite)
 
-Clickhouse Analytics Dashboard is a minimal, production-ish internal analytics tool:
+![CI](https://github.com/Dilnazzzz/clickhouse-analytics/actions/workflows/ci.yml/badge.svg)
 
-- Ingest product events with strict Zod validation and idempotency
-- Store canonical metadata/config in Postgres (Prisma)
-- Store raw events in ClickHouse
-- Dashboard for DAU/WAU, top events, event explorer, and funnels
+A minimal, production-ish product-analytics platform: ingest events through a validated API, store them in ClickHouse (with Postgres as the config plane), and explore DAU/WAU, top events, funnels, and a raw event stream in a Next.js dashboard.
+
+![Overview dashboard](docs/dashboard.png)
+
+<table>
+  <tr>
+    <td><img src="docs/funnels.png" alt="Funnel conversion" /></td>
+    <td><img src="docs/explorer.png" alt="Event explorer" /></td>
+  </tr>
+</table>
 
 ## Architecture
 
-SDK → Ingest API → Postgres (idempotency/config) + ClickHouse (events) → Dashboard (Next.js)
+```
+Node/Web SDK ──▶ POST /api/events ──▶ ┌─ Postgres (Prisma): idempotency, event defs, funnels, reports
+   (typed)        Zod validation      └─ ClickHouse: raw events (source of truth)
+                  + idempotency                     │
+                                                    ▼
+                                         Next.js dashboard: DAU/WAU · top events · funnels · explorer
+```
 
-Events are written only to ClickHouse (source of truth) while Postgres tracks ingest requests, event definitions, funnel configs, and saved reports.
+Events are written only to ClickHouse (the analytical source of truth) while Postgres holds transactional config — ingest requests (for idempotency), event definitions, funnel configs, and saved reports. The split is deliberate: ClickHouse serves fast columnar aggregation over billions of rows; Postgres serves the relational config the app mutates.
+
+## Quickstart
+
+```bash
+cp .env.example .env
+docker compose up -d          # Postgres + ClickHouse
+npm install
+npm run setup                 # prisma generate + migrate + ClickHouse DDL + seed funnels
+npm run dev                   # http://localhost:3000
+npm run demo:seed             # generate ~30 days of realistic demo events
+```
+
+Open the dashboard and you'll see live DAU/WAU, a signup funnel with real cohort drop-off, and a browsable event stream.
 
 ## Tech
 
@@ -51,7 +76,9 @@ For steps `[s1, s2, ...]` within a time range:
 
 Implemented as sequential CTEs in ClickHouse and unit-tested with a pure function.
 
-## Local Setup
+## Manual setup
+
+If you'd rather run the steps individually instead of `npm run setup`:
 
 1. `cp .env.example .env`
 2. `docker compose up -d` (Postgres + ClickHouse)
@@ -60,7 +87,7 @@ Implemented as sequential CTEs in ClickHouse and unit-tested with a pure functio
 5. `npm run ch:setup`
 6. `npm run db:seed`
 7. `npm run dev` (Next on http://localhost:3000)
-8. Optional demo data: `tsx scripts/generate-demo-events.ts`
+8. Demo data: `npm run demo:seed`
 
 ## Required Scripts
 
@@ -84,6 +111,16 @@ Implemented as sequential CTEs in ClickHouse and unit-tested with a pure functio
 - Funnel correctness on synthetic dataset
 
 Run: `npm test`
+
+## Engineering notes
+
+A few correctness details this project gets right, learned the hard way:
+
+- **ClickHouse `count()` is UInt64 → JSON string.** Aggregates come back as strings over the HTTP interface; they're coerced to numbers at the query boundary so summing top-N doesn't string-concatenate.
+- **`minIf(...)` over zero rows returns the epoch, not NULL.** A funnel step a user never fired would otherwise pass a `NOT NULL` check. Presence is tracked with explicit `maxIf(1, …)` flags, and step *i* requires the full ordered chain `ts1 ≤ … ≤ ts_i`.
+- **Client config.** `@clickhouse/client` 0.2.x takes `host` (a full URL), not `url` — the wrong key silently falls back to `localhost:8123`.
+
+CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, and a production build against a Postgres service container on every push.
 
 ## Scaling Notes
 

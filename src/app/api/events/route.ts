@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db/prisma'
 import { env } from '@/lib/env'
 import { getClickHouseClient } from '@/lib/clickhouse/client'
-import { IngestEventSchema, IngestBatchSchema, normalizeEvent } from '@/lib/contracts/event'
+import { IngestEventSchema, IngestBatchSchema, normalizeEvent, type IngestEventInput } from '@/lib/contracts/event'
 
 const SingleOrBatch = z.union([IngestEventSchema, IngestBatchSchema])
 
@@ -26,8 +26,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const isBatch = 'events' in parsed.data
-  const idempotencyKey = isBatch ? parsed.data.idempotencyKey : undefined
+  // Narrow the single-or-batch union in a form TS can follow, so callers get
+  // typed access to `events`/`idempotencyKey` without `as any` casts.
+  const payload = parsed.data
+  const rawEvents: IngestEventInput[] = 'events' in payload ? payload.events : [payload]
+  const idempotencyKey = 'events' in payload ? payload.idempotencyKey : undefined
 
   if (idempotencyKey) {
     const existing = await prisma.ingestRequest.findUnique({ where: { idempotencyKey } })
@@ -36,7 +39,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const events = (isBatch ? parsed.data.events : [parsed.data]).map((e) => normalizeEvent(e as any, idempotencyKey))
+  const events = rawEvents.map((e) => normalizeEvent(e, idempotencyKey))
   const first = events[0]
 
   const ingest = await prisma.ingestRequest.create({

@@ -15,7 +15,10 @@ export async function getTopEvents(params: Range & { limit?: number }) {
     LIMIT ${limit}
   `
   const rs = await ch.query({ query, format: 'JSONEachRow' })
-  return await rs.json<{ event_name: string; cnt: number }[]>()
+  // ClickHouse count()/UInt64 serializes to a JSON string; coerce so callers
+  // get real numbers (otherwise summing top-N string-concatenates them).
+  const rows = await rs.json<{ event_name: string; cnt: string | number }[]>()
+  return rows.map((r) => ({ event_name: r.event_name, cnt: Number(r.cnt) }))
 }
 
 export async function getDAU(params: Range) {
@@ -30,7 +33,8 @@ export async function getDAU(params: Range) {
     ORDER BY day ASC
   `
   const rs = await ch.query({ query, format: 'JSONEachRow' })
-  return await rs.json<{ day: string; dau: number }[]>()
+  const rows = await rs.json<{ day: string; dau: string | number }[]>()
+  return rows.map((r) => ({ day: r.day, dau: Number(r.dau) }))
 }
 
 export async function getWAU(params: Range) {
@@ -42,8 +46,8 @@ export async function getWAU(params: Range) {
       AND timestamp < toDateTime64(${params.to.getTime()} / 1000, 3, 'UTC')
   `
   const rs = await ch.query({ query, format: 'JSONEachRow' })
-  const rows = await rs.json<{ wau: number }[]>()
-  return rows[0]?.wau ?? 0
+  const rows = await rs.json<{ wau: string | number }[]>()
+  return Number(rows[0]?.wau ?? 0)
 }
 
 export async function getEventStream(params: Range & {
@@ -95,19 +99,30 @@ export async function getFunnelStats(steps: string[], range: Range) {
   if (steps.length === 0) return []
   const ch = getClickHouseClient()
   const esc = (s: string) => s.replace(/'/g, "''")
-  const minCols = steps.map((name, i) => `minIf(timestamp, event_name = '${esc(name)}') AS ts${i + 1}`).join(', ')
+  // minIf over zero matching rows returns the DateTime epoch default, NOT null,
+  // so an actor who never fired a step would still pass a `ts IS NOT NULL`
+  // check. Track presence explicitly with a has-flag per step, and require the
+  // full ordered chain ts1 <= ts2 <= … <= ts_i for step i (first-occurrence
+  // sequencing, matching computeFunnelConversion).
+  const cols = steps
+    .map(
+      (name, i) =>
+        `minIf(timestamp, event_name = '${esc(name)}') AS ts${i + 1}, ` +
+        `maxIf(toUInt8(1), event_name = '${esc(name)}') AS has${i + 1}`,
+    )
+    .join(', ')
   const conditions: string[] = []
-  // step 1: has ts1
-  conditions.push(`countIf(ts1 IS NOT NULL) AS step_1`)
+  conditions.push(`countIf(has1 = 1) AS step_1`)
   for (let i = 2; i <= steps.length; i++) {
-    const prev = i - 1
-    conditions.push(`countIf(ts${i} IS NOT NULL AND ts${prev} IS NOT NULL AND ts${i} >= ts${prev}) AS step_${i}`)
+    const has = Array.from({ length: i }, (_, k) => `has${k + 1} = 1`).join(' AND ')
+    const ordered = Array.from({ length: i - 1 }, (_, k) => `ts${k + 1} <= ts${k + 2}`).join(' AND ')
+    conditions.push(`countIf(${has} AND ${ordered}) AS step_${i}`)
   }
   const query = `
     WITH base AS (
       SELECT
         coalesce(user_id, anonymous_id) AS actor,
-        ${minCols}
+        ${cols}
       FROM events
       WHERE timestamp >= toDateTime64(${range.from.getTime()} / 1000, 3, 'UTC')
         AND timestamp < toDateTime64(${range.to.getTime()} / 1000, 3, 'UTC')
@@ -119,10 +134,10 @@ export async function getFunnelStats(steps: string[], range: Range) {
   const rs = await ch.query({ query, format: 'JSONEachRow' })
   const row = await rs.json<Record<string, number>[]>()
   if (!row[0]) return []
-  const counts = steps.map((_, i) => row[0][`step_${i + 1}`] || 0)
+  const counts = steps.map((_, i) => Number(row[0][`step_${i + 1}`] ?? 0))
   return counts.map((count, i) => ({
     step: steps[i],
     count,
-    conversion: i === 0 ? 1 : count / Math.max(1, counts[0])
+    conversion: counts[0] > 0 ? count / counts[0] : 0
   }))
 }
