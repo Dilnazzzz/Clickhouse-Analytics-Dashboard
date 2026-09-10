@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { getDAU, getTopEvents, getWAU } from '@/lib/analytics/queries'
 
 function range(days: number) {
@@ -57,4 +59,3 @@ export default async function OverviewPage() {
     </div>
   )
 }
-

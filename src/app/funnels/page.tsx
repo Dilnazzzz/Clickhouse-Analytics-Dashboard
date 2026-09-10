@@ -1,4 +1,4 @@
-'use server'
+export const dynamic = 'force-dynamic'
 
 import { prisma } from '@/lib/db/prisma'
 import { getFunnelStats } from '@/lib/analytics/queries'
