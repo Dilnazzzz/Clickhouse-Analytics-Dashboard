@@ -43,14 +43,16 @@ jobs:
 
       - run: npm ci
 
+      # Generate the Prisma client first — typecheck, tests, and build all
+      # import it (tests import lib code that pulls in the client).
+      - name: Generate Prisma client
+        run: npx prisma generate
+
       - name: Typecheck
         run: npx tsc --noEmit
 
       - name: Unit tests
         run: npm run test -- --run
-
-      - name: Generate Prisma client
-        run: npx prisma generate
 
       - name: Production build
         run: npm run build
