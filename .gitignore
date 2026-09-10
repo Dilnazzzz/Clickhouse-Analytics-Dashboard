@@ -18,9 +18,9 @@ out/
 
 # prisma
 prisma/*.db
-prisma/migrations/
 
 # misc
 .DS_Store
 
 *.tsbuildinfo
+docker-compose.local.yml

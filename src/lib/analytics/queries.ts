@@ -1,4 +1,5 @@
 import { getClickHouseClient } from '@/lib/clickhouse/client'
+import { actorExpr, getAliasMap } from './identity'
 
 type Range = { from: Date; to: Date }
 
@@ -23,9 +24,10 @@ export async function getTopEvents(params: Range & { limit?: number }) {
 
 export async function getDAU(params: Range) {
   const ch = getClickHouseClient()
+  const actor = actorExpr(await getAliasMap())
   const query = `
     SELECT toDate(timestamp, 'UTC') AS day,
-           uniqExact(coalesce(user_id, anonymous_id)) AS dau
+           uniqExact(${actor}) AS dau
     FROM events
     WHERE timestamp >= toDateTime64(${params.from.getTime()} / 1000, 3, 'UTC')
       AND timestamp < toDateTime64(${params.to.getTime()} / 1000, 3, 'UTC')
@@ -39,8 +41,9 @@ export async function getDAU(params: Range) {
 
 export async function getWAU(params: Range) {
   const ch = getClickHouseClient()
+  const actor = actorExpr(await getAliasMap())
   const query = `
-    SELECT uniqExact(coalesce(user_id, anonymous_id)) AS wau
+    SELECT uniqExact(${actor}) AS wau
     FROM events
     WHERE timestamp >= toDateTime64(${params.from.getTime()} / 1000, 3, 'UTC')
       AND timestamp < toDateTime64(${params.to.getTime()} / 1000, 3, 'UTC')
@@ -121,7 +124,7 @@ export async function getFunnelStats(steps: string[], range: Range) {
   const query = `
     WITH base AS (
       SELECT
-        coalesce(user_id, anonymous_id) AS actor,
+        ${actorExpr(await getAliasMap())} AS actor,
         ${cols}
       FROM events
       WHERE timestamp >= toDateTime64(${range.from.getTime()} / 1000, 3, 'UTC')

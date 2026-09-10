@@ -31,6 +31,17 @@ model IngestRequest {
   timestamp       DateTime
 }
 
+// Identity stitching: when an anonymous visitor logs in, their prior
+// anonymous_id is aliased to the resolved user_id so historical events count
+// toward the same person. One anonymous_id maps to exactly one user_id.
+model IdentityAlias {
+  anonymousId String   @id
+  userId      String
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
+
 model Funnel {
   id        String   @id @default(cuid())
   name      String

@@ -1,0 +1,112 @@
+openapi: 3.1.0
+info:
+  title: PulseBoard Ingest API
+  version: 1.0.0
+  description: >-
+    Public HTTP API for sending product events to PulseBoard and stitching
+    anonymous visitors to known users. Events are validated, deduplicated by
+    idempotency key, and written to ClickHouse.
+servers:
+  - url: http://localhost:3000
+    description: Local development
+security:
+  - bearerAuth: []
+paths:
+  /api/events:
+    post:
+      summary: Ingest one event or a batch
+      description: >-
+        Accepts a single event or a batch of up to 50. A batch with an
+        `idempotencyKey` is deduplicated — replaying the same key returns
+        `duplicate` and inserts nothing.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/Event'
+                - $ref: '#/components/schemas/EventBatch'
+      responses:
+        '200':
+          description: Accepted (or recognized as a duplicate)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [accepted, duplicate] }
+                  inserted: { type: integer }
+        '400': { description: Invalid JSON or validation failure }
+        '401': { description: Missing or invalid bearer token }
+  /api/identify:
+    post:
+      summary: Stitch an anonymous id to a user id
+      description: >-
+        Records `anonymousId -> userId` so historical anonymous events resolve
+        to the same actor in analytics. Idempotent per anonymousId.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [anonymousId, userId]
+              properties:
+                anonymousId: { type: string }
+                userId: { type: string }
+      responses:
+        '200': { description: Alias recorded }
+        '400': { description: Validation failure or equal ids }
+        '401': { description: Missing or invalid bearer token }
+  /api/health:
+    get:
+      summary: Liveness and dependency readiness
+      security: []
+      responses:
+        '200': { description: Postgres and ClickHouse reachable }
+        '503': { description: A dependency is unreachable }
+  /api/metrics:
+    get:
+      summary: Ingest-pipeline and store metrics
+      security: []
+      responses:
+        '200':
+          description: Operational metrics (event counts, ingest acceptance rate)
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: INGEST_API_KEY as a bearer token.
+  schemas:
+    Event:
+      type: object
+      required: [eventName]
+      properties:
+        eventName:
+          type: string
+          pattern: '^[a-z0-9_.:-]+$'
+          maxLength: 80
+        timestamp: { type: string, format: date-time }
+        userId: { type: string }
+        anonymousId: { type: string }
+        sessionId: { type: string }
+        source: { type: string, enum: [web, server, mobile], default: web }
+        properties: { type: object, additionalProperties: true }
+      description: One of userId or anonymousId is required.
+    EventBatch:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: '#/components/schemas/Event' }
+        idempotencyKey: { type: string }
+        sentAt: { type: string, format: date-time }

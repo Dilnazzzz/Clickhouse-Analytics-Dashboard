@@ -23,7 +23,22 @@ Node/Web SDK ──▶ POST /api/events ──▶ ┌─ Postgres (Prisma): idem
                                          Next.js dashboard: DAU/WAU · top events · funnels · explorer
 ```
 
-Events are written only to ClickHouse (the analytical source of truth) while Postgres holds transactional config — ingest requests (for idempotency), event definitions, funnel configs, and saved reports. The split is deliberate: ClickHouse serves fast columnar aggregation over billions of rows; Postgres serves the relational config the app mutates.
+Events are written only to ClickHouse (the analytical source of truth) while Postgres holds transactional config — ingest requests (for idempotency), event definitions, identity aliases, funnel configs, and saved reports. The split is deliberate: ClickHouse serves fast columnar aggregation over billions of rows; Postgres serves the relational config the app mutates.
+
+## API
+
+The ingest surface is documented in [`openapi.yaml`](openapi.yaml) (also served at `/api/openapi`):
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/events` | ingest one event or a batch of ≤50, deduplicated by idempotency key (bearer auth) |
+| `POST /api/identify` | stitch an `anonymousId` to a `userId` (bearer auth) |
+| `GET /api/health` | liveness + Postgres/ClickHouse readiness (200/503) for load balancers and uptime checks |
+| `GET /api/metrics` | ingest-pipeline metrics: event counts, acceptance rate |
+
+### Identity stitching
+
+Events are immutable in ClickHouse, keyed by the id present at capture time (`user_id` if known, else `anonymous_id`). When a visitor logs in, `POST /api/identify` records `anonymous_id → user_id` in Postgres; analytics queries resolve the alias at read time (`lib/analytics/identity.ts`), so a person's pre-login and post-login events count as **one** actor — verified in `DAU`, `WAU`, and funnels — without rewriting history. Multi-hop alias chains flatten to their endpoint; the resolver is unit-tested and quote-escapes ids.
 
 ## Quickstart
 
